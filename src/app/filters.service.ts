@@ -28,6 +28,14 @@ export class FiltersService {
   /** Normalised opponent keys: names are free text, so ignore case and spacing. */
   readonly opp = signal<string[]>([]);
 
+  /** Back to the defaults: first team, current season, everything else unrestricted. */
+  reset() {
+    this.team.set(this.storage.teams().slice(0, 1));
+    this.season.set([this.storage.currentSeason()]);
+    this.comp.set([]);
+    this.opp.set([]);
+  }
+
   private oppKey = (name: string) => name.trim().toLowerCase();
 
   /** Every opponent seen, keeping the first spelling used. */
@@ -60,7 +68,7 @@ export class FiltersService {
   readonly filters = computed<FilterDef[]>(() => [
     { label: 'Team', allLabel: 'All teams', values: this.team(), options: this.storage.teams().map((t) => ({ value: t, label: t })), set: (v) => this.team.set(v), labelOf: this.same },
     { label: 'Season', allLabel: 'All seasons', values: this.season(), options: this.storage.seasons().map((s) => ({ value: s, label: s })), set: (v) => this.season.set(v), labelOf: this.same },
-    { label: 'Competition', allLabel: 'All competitions', values: this.comp(), options: this.storage.competitionNames().map((c) => ({ value: c, label: c })), set: (v) => this.comp.set(v), labelOf: this.same },
+    { label: 'Competition', allLabel: 'All competitions', values: this.comp(), options: this.storage.competitions().map((c) => ({ value: c, label: c })), set: (v) => this.comp.set(v), labelOf: this.same },
     { label: 'Opponent', allLabel: 'All opponents', values: this.opp(), options: this.opponentOptions(), set: (v) => this.opp.set(v), labelOf: (v) => this.opponentLabels().get(v) ?? v },
   ]);
 

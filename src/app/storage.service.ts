@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { Game, Counts, Config, DEFAULT_CONFIG, EMPTY_COUNTS } from './models';
+import { Game, Counts, Config, DEFAULT_COMPETITIONS, DEFAULT_CONFIG, DEFAULT_TEAMS, EMPTY_COUNTS } from './models';
 
 export interface ImportResult {
   added: number;
@@ -19,25 +19,17 @@ const KEY = 'team-metrics.v1';
 interface Persisted {
   games: Game[];
   teams: string[];
+  competitions: string[];
   config?: Partial<Config>;
 }
 
 @Injectable({ providedIn: 'root' })
 export class StorageService {
   readonly games = signal<Game[]>([]);
-  readonly teams = signal<string[]>(['My Team']);
+  readonly teams = signal<string[]>([...DEFAULT_TEAMS]);
   readonly config = signal<Config>({ ...DEFAULT_CONFIG });
   readonly persistent = signal<boolean | null>(null);
-  readonly competitionNames = computed(() =>
-    Array.from(
-      new Set([
-        ...this.config().competitions,
-        ...this.games()
-          .map((g) => g.type)
-          .filter(Boolean),
-      ]),
-    ),
-  );
+  readonly competitions = signal<string[]>([...DEFAULT_COMPETITIONS]);
   /** Seasons that have games, plus the current one, newest first. */
   readonly seasons = computed(() =>
     Array.from(new Set([this.currentSeason(), ...this.games().map((g) => this.seasonOf(g.date))]))
@@ -68,29 +60,44 @@ export class StorageService {
 
   private apply(d: Partial<Persisted>) {
     const games = (d.games ?? []).filter((g) => g && typeof g.id === 'string' && typeof g.date === 'string').map((g) => ({ ...EMPTY_COUNTS, ...g }) as Game);
-    const teams = Array.from(new Set([...(d.teams ?? []), ...games.map((g) => g.team)])).filter(Boolean);
+    const unique = (names: string[]) => Array.from(new Set(names.map((n) => String(n).trim()).filter(Boolean)));
+    // every team / competition a game refers to is declared, so nothing is orphaned
+    const teams = unique([...(d.teams ?? []), ...games.map((g) => g.team)]);
+    const competitions = unique([...(d.competitions ?? []), ...games.map((g) => g.type)]);
     this.games.set(games);
     if (teams.length) this.teams.set(teams);
+    if (competitions.length) this.competitions.set(competitions);
   }
 
   private save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ games: this.games(), teams: this.teams(), config: this.config() }));
+      localStorage.setItem(KEY, JSON.stringify({ games: this.games(), teams: this.teams(), competitions: this.competitions(), config: this.config() }));
     } catch {
       /* quota */
     }
   }
 
-  upsertTeamsSave() {
-    this.save();
+  addTeam(name: string) {
+    const n = name.trim();
+    if (n && !this.teams().includes(n)) {
+      this.teams.update((t) => [...t, n]);
+      this.save();
+    }
+  }
+
+  addCompetition(name: string) {
+    const n = name.trim();
+    if (n && !this.competitions().includes(n)) {
+      this.competitions.update((c) => [...c, n]);
+      this.save();
+    }
   }
 
   private cleanConfig(c: Partial<Config>): Config {
     const month = Math.min(12, Math.max(1, Math.floor(Number(c.seasonStartMonth)) || DEFAULT_CONFIG.seasonStartMonth));
     const maxDay = new Date(2001, month, 0).getDate();
     const day = Math.min(maxDay, Math.max(1, Math.floor(Number(c.seasonStartDay)) || 1));
-    const comps = Array.from(new Set((c.competitions ?? []).map((x) => String(x).trim()).filter(Boolean)));
-    return { seasonStartMonth: month, seasonStartDay: day, competitions: comps.length ? comps : [...DEFAULT_CONFIG.competitions] };
+    return { seasonStartMonth: month, seasonStartDay: day };
   }
 
   setConfig(patch: Partial<Config>) {
@@ -118,6 +125,7 @@ export class StorageService {
     g = { ...g, updatedAt: Date.now() };
     this.games.update((list) => (list.some((x) => x.id === g.id) ? list.map((x) => (x.id === g.id ? g : x)) : [...list, g]));
     if (!this.teams().includes(g.team)) this.teams.update((t) => [...t, g.team]);
+    if (g.type && !this.competitions().includes(g.type)) this.competitions.update((c) => [...c, g.type]);
     this.save();
   }
 
@@ -133,13 +141,13 @@ export class StorageService {
       date: new Date().toISOString().slice(0, 10),
       team: team ?? this.teams()[0],
       opponent: '',
-      type: this.config().competitions[0],
+      type: this.competitions()[0],
       notes: '',
     };
   }
 
   exportJson(): string {
-    return JSON.stringify({ games: this.games(), teams: this.teams(), config: this.config() }, null, 2);
+    return JSON.stringify({ games: this.games(), teams: this.teams(), competitions: this.competitions(), config: this.config() }, null, 2);
   }
 
   /**
@@ -151,7 +159,7 @@ export class StorageService {
     const r: ImportResult = { added: 0, updated: 0, unchanged: 0, possibleDuplicates: [], errors: [] };
     const byId = new Map(this.games().map((g) => [g.id, g]));
     const teams = [...this.teams()];
-    const incomingComps: string[] = [];
+    const comps = [...this.competitions()];
 
     for (const f of files) {
       let d: Partial<Persisted>;
@@ -164,13 +172,13 @@ export class StorageService {
       }
 
       teams.push(...(d.teams ?? []));
-      incomingComps.push(...(d.config?.competitions ?? []));
+      comps.push(...(d.competitions ?? []));
       for (const raw of d.games!) {
         if (!raw || typeof raw.id !== 'string' || typeof raw.date !== 'string') {
           r.errors.push(`${f.name}: skipped a malformed game`);
           continue;
         }
-        const g = { ...EMPTY_COUNTS, type: this.config().competitions[0], notes: '', opponent: '', team: teams[0], ...(raw as Partial<Game>) } as Game;
+        const g = { ...EMPTY_COUNTS, type: comps[0], notes: '', opponent: '', team: teams[0], ...(raw as Partial<Game>) } as Game;
         const cur = byId.get(g.id);
         if (cur) {
           if (sameCounts(cur, g) && cur.notes === g.notes && cur.opponent === g.opponent && cur.date === g.date) r.unchanged++;
@@ -190,8 +198,7 @@ export class StorageService {
         r.added++;
       }
     }
-    this.apply({ games: [...byId.values()], teams });
-    this.config.update((c) => this.cleanConfig({ ...c, competitions: [...c.competitions, ...incomingComps] }));
+    this.apply({ games: [...byId.values()], teams, competitions: comps });
     this.save();
     return r;
   }
@@ -202,8 +209,32 @@ export class StorageService {
     return [cols.join(','), ...this.sortedGames().map((g) => cols.map((c) => esc(c === 'season' ? this.seasonOf(g.date) : g[c])).join(','))].join('\n');
   }
 
+  gameCount(team: string) {
+    return this.games().filter((g) => g.team === team).length;
+  }
+
+  /** Removes the team and all of its games. The last remaining team can't be removed. */
+  removeTeam(name: string) {
+    if (this.teams().length < 2) return;
+    this.teams.update((t) => t.filter((x) => x !== name));
+    this.games.update((l) => l.filter((g) => g.team !== name));
+    this.save();
+  }
+
+  /** Removes the competition and all games played in it. The last remaining competition can't be removed. */
+  removeCompetition(name: string) {
+    if (this.competitions().length < 2) return;
+    this.competitions.update((c) => c.filter((x) => x !== name));
+    this.games.update((l) => l.filter((g) => g.type !== name));
+    this.save();
+  }
+
+  /** Wipes games, teams and settings, returning the app to its first-run state. */
   clearAll() {
     this.games.set([]);
+    this.teams.set([...DEFAULT_TEAMS]);
+    this.competitions.set([...DEFAULT_COMPETITIONS]);
+    this.config.set({ ...DEFAULT_CONFIG });
     this.save();
   }
 }

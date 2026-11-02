@@ -192,7 +192,7 @@ export class GameComponent {
   dirty = computed(() => JSON.stringify(this.g()) !== this.initial);
   history = signal<Key[][]>([]);
   date = computed(() => toDate(this.g().date));
-  competitions = computed(() => Array.from(new Set([...this.storage.config().competitions, this.g().type])).filter(Boolean));
+  competitions = computed(() => Array.from(new Set([...this.storage.competitions(), this.g().type])).filter(Boolean));
   live = computed(() => computeMetrics(this.g()));
 
   shooting = [

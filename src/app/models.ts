@@ -15,7 +15,7 @@ export interface Game extends Counts {
   date: string; // yyyy-mm-dd
   team: string;
   opponent: string;
-  /** competition name, from Config.competitions */
+  /** competition name, from the declared competitions list */
   type: string;
   notes: string;
   /** epoch ms of last edit; newest wins when merging backups */
@@ -25,10 +25,14 @@ export interface Game extends Counts {
 export interface Config {
   seasonStartMonth: number; // 1-12
   seasonStartDay: number;
-  competitions: string[];
 }
 
-export const DEFAULT_CONFIG: Config = { seasonStartMonth: 7, seasonStartDay: 1, competitions: ['League', 'Cup', 'Friendly'] };
+/** What a fresh install, and "Delete everything", starts with. */
+export const DEFAULT_TEAMS = ['My Team'];
+
+export const DEFAULT_COMPETITIONS = ['League', 'Cup', 'Friendly'];
+
+export const DEFAULT_CONFIG: Config = { seasonStartMonth: 9, seasonStartDay: 1 };
 
 export const EMPTY_COUNTS: Counts = {
   fg2m: 0,

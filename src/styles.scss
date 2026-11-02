@@ -193,3 +193,7 @@ textarea.mat-mdc-input-element {
   min-width: 0;
   padding: 0 8px;
 }
+
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
