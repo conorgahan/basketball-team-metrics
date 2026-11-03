@@ -150,3 +150,6 @@ export function isValid(c: Counts): string | null {
   for (const k of Object.keys(EMPTY_COUNTS) as (keyof Counts)[]) if (c[k] < 0 || !Number.isFinite(c[k])) return 'Counts must be zero or more';
   return null;
 }
+
+/** dd/mm/yy: unambiguous when games from several seasons are shown together. */
+export const shortDate = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(2, 4)}`;
